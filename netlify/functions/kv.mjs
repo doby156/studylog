@@ -1,17 +1,3 @@
-// Netlify Function: 완전 무료(Netlify Blobs)로 study-log 데이터를 저장/조회하는 API
-// 배포되면 자동으로 /.netlify/functions/kv 경로로 열려요. 별도 설치/설정 필요 없음.
-//
-// 사용법 (프론트엔드 fetch):
-//   GET  /.netlify/functions/kv?key=study-log-state-v1:doby1
-//   POST /.ne// Netlify Function: 완전 무료(Netlify Blobs)로 study-log 데이터를 저장/조회하는 API
-// 배포되면 자동으로 /.netlify/functions/kv 경로로 열려요. 별도 설치/설정 필요 없음.
-//
-// 사용법 (프론트엔드 fetch):
-//   GET  /.netlify/functions/kv?key=study-log-state-v1:doby1
-// 관리자용 사용자 목록:
-//   GET  /.netlify/functions/kv?list=users
-//     -> 지금까지 저장이 한 번이라도 된 사용자 key 목록 + 마지막 저장 시각을 돌려줌
-
 import { getStore } from "@netlify/blobs";
 
 const STORE_NAME = "study-log";
