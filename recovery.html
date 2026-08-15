@@ -1,6 +1,180 @@
 <!DOCTYPE html>
 <html lang="ko">
+<head><!DOCTYPE html>
+<html lang="ko">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STUDY LOG 데이터 복구 도구</title>
+<style>
+  body{font-family:-apple-system,'Malgun Gothic',sans-serif; max-width:520px; margin:40px auto; padding:0 20px; line-height:1.6;}
+  h1{font-size:1.25rem;}
+  label{display:block; margin:16px 0 6px; font-weight:700;}
+  input[type=text]{width:100%; padding:10px; font-size:1rem; border:1px solid #999; border-radius:8px; box-sizing:border-box;}
+  input[type=file]{width:100%; padding:10px 0;}
+  button{margin-top:20px; width:100%; padding:14px; font-size:1rem; font-weight:700; background:#C97078; color:#fff; border:none; border-radius:8px; cursor:pointer;}
+  button:disabled{background:#ccc;}
+  #log{margin-top:20px; padding:14px; background:#f4f4f4; border-radius:8px; font-size:0.875rem; white-space:pre-wrap; min-height:40px;}
+  .err{color:#c0392b; font-weight:700;}
+  .ok{color:#2d7a3e; font-weight:700;}
+</style>
+</head>
+<body>
+  <h1>STUDY LOG 데이터 복구 도구</h1>
+  <p>백업 JSON 파일을 서버에 <b>강제로 직접 덮어써서</b> 복원해요. 앱의 복잡한 로직을 거치지 않아서 더 확실해요.</p>
+
+  <label for="userId">아이디 (예: doby1)</label>
+  <input type="text" id="userId" placeholder="복원할 계정 아이디">
+
+  <label for="fileInput">백업 JSON 파일</label>
+  <input type="file" id="fileInput" accept="application/json">
+
+  <button id="restoreBtn">이 아이디로 강제 복원</button>
+
+  <hr style="margin:32px 0;">
+
+  <h1 style="font-size:1.0625rem;">회원 목록(아이디)을 서버로 강제 동기화</h1>
+  <p>다른 브라우저에서 로그인이 안 될 때 눌러주세요. <b>지금 이 브라우저(원래 가입하셨던 그 브라우저)</b>에 저장된 회원 목록을 그대로 서버로 밀어넣어요.</p>
+  <button id="syncUsersBtn">이 브라우저의 회원 목록을 서버로 강제 전송</button>
+
+  <div id="log">아직 아무 작업도 안 했어요.</div>
+
+<script>
+const logEl = document.getElementById('log');
+function log(msg, cls){
+  const line = document.createElement('div');
+  if(cls) line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+}
+
+document.getElementById('syncUsersBtn').addEventListener('click', async ()=>{
+  logEl.innerHTML = '';
+  const btn = document.getElementById('syncUsersBtn');
+  btn.disabled = true;
+  try{
+    const USERS_KEY = 'study-log-users-v1';
+    const localRaw = localStorage.getItem(USERS_KEY);
+    if(!localRaw){
+      log('이 브라우저의 localStorage에 회원 목록(study-log-users-v1)이 아예 없어요. 이 브라우저에서 원래 회원가입/로그인을 하신 게 맞는지 확인해주세요.', 'err');
+      btn.disabled = false;
+      return;
+    }
+    let localUsers;
+    try{ localUsers = JSON.parse(localRaw); }
+    catch(e){ log('로컬 회원 목록이 손상되어 있어요: ' + e.message, 'err'); btn.disabled=false; return; }
+
+    log('이 브라우저의 회원 목록 발견: ' + localUsers.length + '명');
+    localUsers.forEach(u=> log('  - ' + u.id + ' (' + u.name + ')'));
+
+    log('서버의 현재 회원 목록 확인 중...');
+    const getRes = await fetch('/.netlify/functions/kv?key=' + encodeURIComponent(USERS_KEY));
+    const getData = await getRes.json().catch(()=> null);
+    let serverUsers = [];
+    if(getData && getData.value){
+      try{ serverUsers = JSON.parse(getData.value); }catch(e){ serverUsers = []; }
+    }
+    log('서버에 원래 있던 회원 수: ' + serverUsers.length + '명');
+
+    // id 기준으로 합치기(로컬 쪽을 우선하되, 서버에만 있는 계정은 유지)
+    const map = new Map(serverUsers.map(u=>[u.id, u]));
+    localUsers.forEach(u=> map.set(u.id, u));
+    const merged = [...map.values()];
+
+    log('합쳐진 회원 수: ' + merged.length + '명. 서버로 전송 중...');
+    const postRes = await fetch('/.netlify/functions/kv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: USERS_KEY, value: JSON.stringify(merged) })
+    });
+    if(!postRes.ok){
+      const postErrText = await postRes.text().catch(()=> '');
+      log('전송 실패! HTTP ' + postRes.status + ' ' + postErrText, 'err');
+      btn.disabled = false;
+      return;
+    }
+    log('전송 성공.');
+
+    log('재확인 중...');
+    const verifyRes = await fetch('/.netlify/functions/kv?key=' + encodeURIComponent(USERS_KEY));
+    const verifyData = await verifyRes.json().catch(()=> null);
+    if(verifyData && verifyData.value){
+      const verified = JSON.parse(verifyData.value);
+      log('✅ 서버에서 확인된 회원 수: ' + verified.length + '명 (' + verified.map(u=>u.id).join(', ') + ')', 'ok');
+      log('이제 다른 브라우저에서 로그인을 다시 시도해보세요.', 'ok');
+    } else {
+      log('⚠️ 재확인에서 값이 안 보여요. 잠시 후 다시 확인해주세요.', 'err');
+    }
+  }catch(e){
+    log('예상치 못한 오류: ' + e.message, 'err');
+  }
+  btn.disabled = false;
+});
+
+document.getElementById('restoreBtn').addEventListener('click', async ()=>{
+  logEl.innerHTML = '';
+  const id = document.getElementById('userId').value.trim();
+  const file = document.getElementById('fileInput').files[0];
+  const btn = document.getElementById('restoreBtn');
+
+  if(!id){ log('아이디를 입력해주세요.', 'err'); return; }
+  if(!file){ log('백업 파일을 선택해주세요.', 'err'); return; }
+
+  btn.disabled = true;
+  log('파일 읽는 중...');
+
+  try{
+    const text = await file.text();
+    let parsed;
+    try{ parsed = JSON.parse(text); }
+    catch(e){ log('이 파일은 올바른 JSON 백업 파일이 아니에요. (JSON.parse 실패: ' + e.message + ')', 'err'); btn.disabled=false; return; }
+
+    log('파일 읽기 성공. 항목 수: ' + Object.keys(parsed).length + '개');
+    log('강의 과목 수: ' + ((parsed.panels && parsed.panels.lecture && parsed.panels.lecture.subjects) || []).length);
+    log('교재 과목 수: ' + ((parsed.panels && parsed.panels.review && parsed.panels.review.subjects) || []).length);
+
+    const key = 'study-log-state-v1:' + id;
+    log('서버에 저장 시도: key = ' + key);
+
+    const res = await fetch('/.netlify/functions/kv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value: text })
+    });
+
+    if(!res.ok){
+      const errText = await res.text().catch(()=> '');
+      log('서버 저장 실패! HTTP ' + res.status + ' ' + errText, 'err');
+      btn.disabled = false;
+      return;
+    }
+
+    const result = await res.json().catch(()=> null);
+    log('서버 응답: ' + JSON.stringify(result));
+
+    // 저장이 실제로 됐는지 바로 다시 읽어서 검증
+    log('저장이 실제로 됐는지 재확인 중...');
+    const verifyRes = await fetch('/.netlify/functions/kv?key=' + encodeURIComponent(key));
+    const verifyData = await verifyRes.json().catch(()=> null);
+    if(verifyData && verifyData.value === text){
+      log('✅ 서버에 정확히 저장된 것까지 확인했어요!', 'ok');
+    } else if(verifyData && verifyData.value){
+      log('⚠️ 서버에 뭔가 저장되긴 했는데 방금 보낸 내용과 완전히 같은지는 확인이 안 돼요. 그래도 데이터는 들어갔어요.', 'ok');
+    } else {
+      log('⚠️ 저장 요청은 성공했다고 나왔는데, 재확인에서는 값이 안 보여요. 캐시 지연일 수 있으니 잠시 후 앱에서 확인해보세요.', 'err');
+    }
+
+    log('');
+    log('이제 STUDY LOG 사이트로 가서 "' + id + '" 계정으로 로그인해서 확인해보세요.', 'ok');
+  }catch(e){
+    log('예상치 못한 오류: ' + e.message, 'err');
+  }
+  btn.disabled = false;
+});
+</script>
+</body>
+</html>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>STUDY LOG 데이터 복구 도구</title>
