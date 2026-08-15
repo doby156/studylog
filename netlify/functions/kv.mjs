@@ -8,8 +8,6 @@
 //
 // 사용법 (프론트엔드 fetch):
 //   GET  /.netlify/functions/kv?key=study-log-state-v1:doby1
-//   POST /.netlify/functions/kv   body: { key: "...", value: "..." }
-//
 // 관리자용 사용자 목록:
 //   GET  /.netlify/functions/kv?list=users
 //     -> 지금까지 저장이 한 번이라도 된 사용자 key 목록 + 마지막 저장 시각을 돌려줌
